@@ -177,3 +177,74 @@ Für den externen Zugriff via `https://vault.lan` (z. B. über Nginx, HAProxy od
 - **Kombiniertes Bundle:** [reverse_proxy_vault.lan.pem](file:///home/joe/Development/hcv-proxomx/reverse_proxy_vault.lan.pem) (enthält Zertifikat, privaten Schlüssel und Root-CA)
 
 Verwende das kombinierte PEM-Bundle oder das Zertifikat+Key-Paar in deiner Reverse-Proxy-Konfiguration und leite den Traffic an die IP-Adressen der Vault-Nodes auf Port `8200` weiter.
+
+---
+
+## SSH Key Signing (Client-Zertifikate)
+
+Mit dem SSH-Zertifikats-Signierungs-Verfahren von Vault müssen keine SSH-Public-Keys mehr manuell in den `authorized_keys` der Zielserver hinterlegt werden. Stattdessen vertrauen die Server einer von Vault verwalteten SSH-Zertifizierungsstelle (CA). Benutzer lassen ihre temporären Schlüssel von Vault signieren.
+
+Zur Einrichtung wurde das Skript [setup-ssh-signing.sh](file:///home/joe/Development/hcv-proxomx/setup-ssh-signing.sh) erstellt und ausgeführt. Es hat die CA in Vault konfiguriert und den öffentlichen CA-Schlüssel als [vault_ssh_ca.pub](file:///home/joe/Development/hcv-proxomx/vault_ssh_ca.pub) gespeichert.
+
+### Server-Konfiguration
+
+Führe diese Schritte auf jedem Zielserver (z. B. deinen Linux-Servern/Nodes) aus, auf denen sich Benutzer per SSH anmelden sollen:
+
+1. **CA-Schlüssel auf den Server kopieren:**
+   Kopiere die Datei [vault_ssh_ca.pub](file:///home/joe/Development/hcv-proxomx/vault_ssh_ca.pub) auf den Zielserver unter `/etc/ssh/trusted-user-ca-keys.pem`.
+   
+   ```bash
+   # Setze die korrekten Berechtigungen:
+   chown root:root /etc/ssh/trusted-user-ca-keys.pem
+   chmod 644 /etc/ssh/trusted-user-ca-keys.pem
+   ```
+
+2. **sshd-Konfiguration anpassen:**
+   Füge die folgende Zeile am Ende der `/etc/ssh/sshd_config` hinzu:
+   
+   ```text
+   TrustedUserCAKeys /etc/ssh/trusted-user-ca-keys.pem
+   ```
+
+3. **SSH-Dienst neu starten:**
+   ```bash
+   systemctl restart sshd
+   ```
+
+Nun vertraut der SSH-Dienst dieses Servers jedem SSH-Schlüssel, der von der Vault-CA signiert wurde.
+
+### Client-Nutzung (Wie man sich anmeldet)
+
+Jeder Benutzer (z. B. ein Administrator) kann nun einen kurzlebigen SSH-Schlüssel signieren lassen, um sich anzumelden:
+
+1. **SSH-Schlüsselpaar erzeugen (falls noch nicht vorhanden):**
+   ```bash
+   ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519
+   ```
+
+2. **Bei Vault anmelden und Schlüssel signieren lassen:**
+   Das Zertifikat wird mit einer Standard-Gültigkeit von 10 Minuten ausgestellt (max. 30 Minuten):
+   
+   ```bash
+   export VAULT_CACERT="/pfad/zu/lan_root_ca.crt"
+   export VAULT_ADDR="https://vault.lan"
+   
+   # 1. Login
+   vault login -method=userpass username=admin
+   
+   # 2. Signieren
+   vault write -field=signed_key ssh-client-signer/sign/client-role public_key=@~/.ssh/id_ed25519.pub > ~/.ssh/id_ed25519-cert.pub
+   ```
+
+3. **Zertifikat prüfen:**
+   Du kannst die Details und Gültigkeit des generierten Zertifikats inspizieren:
+   ```bash
+   ssh-keygen -Lf ~/.ssh/id_ed25519-cert.pub
+   ```
+
+4. **Verbindung herstellen:**
+   Beim Verbindungsaufbau sendet der SSH-Client das Zertifikat automatisch mit, sofern es im gleichen Ordner wie der private Schlüssel liegt:
+   
+   ```bash
+   ssh -i ~/.ssh/id_ed25519 root@dein-zielserver.lan
+   ```
