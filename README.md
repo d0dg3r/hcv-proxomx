@@ -188,7 +188,26 @@ Zur Einrichtung wurde das Skript [setup-ssh-signing.sh](file:///home/joe/Develop
 
 ### Server-Konfiguration
 
-Führe diese Schritte auf jedem Zielserver (z. B. deinen Linux-Servern/Nodes) aus, auf denen sich Benutzer per SSH anmelden sollen:
+Um die Konfiguration auf den Zielservern (z. B. Rocky Linux, Debian, Ubuntu, Arch Linux) zu vereinfachen, wurde das Skript [install-ssh-ca.sh](file:///home/joe/Development/hcv-proxomx/install-ssh-ca.sh) erstellt.
+
+#### Option A: Automatische Einrichtung über das Skript (Empfohlen)
+
+Kopiere das Skript [install-ssh-ca.sh](file:///home/joe/Development/hcv-proxomx/install-ssh-ca.sh) auf deinen Zielserver und führe es mit Root-Rechten aus:
+
+```bash
+chmod +x install-ssh-ca.sh
+sudo ./install-ssh-ca.sh
+```
+
+Das Skript:
+1. Erstellt `/etc/ssh/trusted-user-ca-keys.pem` mit dem eingebetteten CA-Schlüssel.
+2. Setzt die korrekten Dateiberechtigungen.
+3. Konfiguriert die `TrustedUserCAKeys` Direktive in der `/etc/ssh/sshd_config` (ohne doppelte Einträge).
+4. Erkennt und startet den passenden SSH-Dienst (`sshd` auf Arch/RedHat, `ssh` auf Debian/Ubuntu) neu.
+
+#### Option B: Manuelle Einrichtung
+
+Falls du die Konfiguration lieber manuell durchführen möchtest:
 
 1. **CA-Schlüssel auf den Server kopieren:**
    Kopiere die Datei [vault_ssh_ca.pub](file:///home/joe/Development/hcv-proxomx/vault_ssh_ca.pub) auf den Zielserver unter `/etc/ssh/trusted-user-ca-keys.pem`.
@@ -207,9 +226,14 @@ Führe diese Schritte auf jedem Zielserver (z. B. deinen Linux-Servern/Nodes) au
    ```
 
 3. **SSH-Dienst neu starten:**
-   ```bash
-   systemctl restart sshd
-   ```
+   * Auf RedHat/Arch/Rocky Linux:
+     ```bash
+     systemctl restart sshd
+     ```
+   * Auf Debian/Ubuntu:
+     ```bash
+     systemctl restart ssh
+     ```
 
 Nun vertraut der SSH-Dienst dieses Servers jedem SSH-Schlüssel, der von der Vault-CA signiert wurde.
 
