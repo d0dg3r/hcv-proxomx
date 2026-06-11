@@ -1,0 +1,179 @@
+# HashiCorp Vault HA Cluster auf Proxmox VE (Rocky Linux 10 LXCs)
+
+Dieses Repository enthält die Terraform-Konfigurationen und Shell-Skripte zur Bereitstellung, Initialisierung und Absicherung eines hochverfügbaren (HA) 3-Node HashiCorp Vault Clusters auf Proxmox VE. 
+
+Die Container basieren auf Rocky Linux 10 LXCs. Die interne Kommunikation sowie Client-Verbindungen sind durch eine dedizierte `.lan` PKI abgesichert.
+
+---
+
+## Architektur & Infrastruktur
+
+- **Plattform:** 3x unprivilegierte Rocky Linux 10 LXC-Container auf Proxmox VE.
+- **Speicher-Backend:** Raft (Integrated Storage) mit automatischem Peering über `retry_join`.
+- **Hohe Verfügbarkeit (HA):** Ein aktiver Leader mit zwei Standby-Repliken.
+- **Sicherheit (TLS):** 
+  - Initiales Bootstrap mit Terraform-generierten selbstsignierten Zertifikaten.
+  - Endgültige Absicherung über eine interne Vault-PKI mit einer **20 Jahre** gültigen Root-CA und **10 Jahre** gültigen Node-Zertifikaten.
+  - Generiertes Zertifikats-Bundle (PEM) für einen externen Reverse-Proxy.
+
+---
+
+## Repository-Struktur und Dateien
+
+- **Terraform-Konfigurationen:**
+  - [main.tf](file:///home/joe/Development/hcv-proxomx/main.tf): Lädt das Rocky Linux 10 Template herunter und provisioniert die 3 LXC-Container (`vault-01`, `vault-02`, `vault-03`).
+  - [tls.tf](file:///home/joe/Development/hcv-proxomx/tls.tf): Erstellt die initiale Bootstrap-CA und signiert die temporären TLS-Zertifikate für das Cluster-Bootstrapping.
+  - [provision.tf](file:///home/joe/Development/hcv-proxomx/provision.tf): Kopiert TLS-Zertifikate, Konfigurationen und führt das Installationsskript auf den Nodes aus.
+  - [variables.tf](file:///home/joe/Development/hcv-proxomx/variables.tf) / [providers.tf](file:///home/joe/Development/hcv-proxomx/providers.tf) / [outputs.tf](file:///home/joe/Development/hcv-proxomx/outputs.tf): Konfigurationsvariablen, Provider-Definitionen und Terraform-Outputs.
+- **Templates und Installations-Skripte:**
+  - [templates/vault.hcl.tftpl](file:///home/joe/Development/hcv-proxomx/templates/vault.hcl.tftpl): Jinja/Terraform-Template für die Vault-Konfigurationsdatei (`/etc/vault.d/vault.hcl`).
+  - [scripts/install-vault.sh](file:///home/joe/Development/hcv-proxomx/scripts/install-vault.sh): Installiert das offizielle HashiCorp Vault-Repository und -Paket auf Rocky Linux 10.
+- **Betriebs- und Setup-Skripte (Lokal auszuführen):**
+  - [init-and-unseal.sh](file:///home/joe/Development/hcv-proxomx/init-and-unseal.sh): Initialisiert das Vault-Cluster und entsiegelt (unseals) alle 3 Nodes automatisch.
+  - [create-admin-user.sh](file:///home/joe/Development/hcv-proxomx/create-admin-user.sh): Aktiviert das `userpass`-Backend und legt einen Admin-Benutzer mit Vollrechten an.
+  - [setup-pki.sh](file:///home/joe/Development/hcv-proxomx/setup-pki.sh): Konfiguriert die interne Root-CA für die Domain `.lan` in Vault (20 Jahre Gültigkeit).
+  - [replace-vault-certs.sh](file:///home/joe/Development/hcv-proxomx/replace-vault-certs.sh): Erstellt neue 10-Jahres-Zertifikate für die Nodes sowie den Reverse Proxy, verteilt diese und führt einen Rolling Restart der Nodes durch.
+
+---
+
+## Step-by-Step Setup-Anleitung
+
+### 1. Infrastruktur bereitstellen (Terraform)
+Stelle sicher, dass deine `terraform.tfvars` die korrekten Proxmox API-Tokens und Netzwerkeinstellungen enthält. Führe anschließend Folgendes aus:
+
+```bash
+terraform init
+terraform apply -auto-approve
+```
+Dies lädt das Rocky Linux 10 Template herunter, erstellt die LXCs, installiert Vault und konfiguriert das anfängliche TLS-Bootstrap.
+
+### 2. Initialisierung & Entsiegelung (Unseal)
+Führe das unseal-Skript aus, um das Cluster zu initialisieren und die Nodes zu entsiegeln:
+
+```bash
+./init-and-unseal.sh
+```
+> [!IMPORTANT]
+> Dieses Skript generiert die Datei `vault-keys.json`, welche den Root-Token sowie die Unseal-Keys enthält. Diese Datei ist in `.gitignore` eingetragen und sollte streng vertraulich behandelt werden.
+
+### 3. Administrator-Konto erstellen
+Um nicht dauerhaft den Root-Token verwenden zu müssen, erstellen wir einen Admin-Benutzer:
+
+```bash
+./create-admin-user.sh
+```
+Das Skript gibt den Benutzernamen (`admin`) und ein zufällig generiertes Passwort aus. Du kannst dich damit unter `https://10.1.3.221:8200` im UI einloggen.
+
+### 4. PKI für `.lan` einrichten
+Um Zertifikate für die lokale Infrastruktur auszustellen, richten wir eine PKI secrets engine ein:
+
+```bash
+./setup-pki.sh
+```
+Dadurch wird die `lan_root_ca.crt` mit 20 Jahren Gültigkeit erstellt und eine Rolle `lan` für 10 Jahre gültige Zertifikate definiert.
+
+### 5. Zertifikate austauschen (Rolling Replacement)
+Ersetze die temporären Bootstrap-Zertifikate der Nodes durch die neuen 10-Jahres-Zertifikate der Vault-PKI:
+
+```bash
+./replace-vault-certs.sh
+```
+Dieses Skript:
+1. Erstellt neue Zertifikate für alle Nodes und den Reverse Proxy.
+2. Lädt die Zertifikate auf die LXC-Nodes hoch.
+3. Startet die Vault-Dienste nacheinander neu und entsiegelt die Nodes wieder automatisch.
+4. Erstellt die Datei [lan_root_ca.crt](file:///home/joe/Development/hcv-proxomx/lan_root_ca.crt) lokal.
+
+---
+
+## Vertrauensstellung auf Clients einrichten
+
+Damit deine lokalen Clients (z. B. dein Browser oder das CLI) den Zertifikaten von Vault und dem Reverse Proxy vertrauen, muss das Root-CA-Zertifikat ([lan_root_ca.crt](file:///home/joe/Development/hcv-proxomx/lan_root_ca.crt)) auf den jeweiligen Systemen importiert werden.
+
+### Linux
+
+#### Arch Linux (Host)
+```bash
+sudo cp lan_root_ca.crt /etc/ca-certificates/trust-source/anchors/vault_lan_root_ca.crt
+sudo trust extract-compat
+```
+
+#### Debian / Ubuntu
+```bash
+sudo cp lan_root_ca.crt /usr/local/share/ca-certificates/vault_lan_root_ca.crt
+sudo update-ca-certificates
+```
+
+#### RHEL / Rocky Linux / Fedora
+```bash
+sudo cp lan_root_ca.crt /etc/pki/ca-trust/source/anchors/vault_lan_root_ca.crt
+sudo update-ca-trust
+```
+
+---
+
+### Windows
+
+#### Per GUI (Grafische Oberfläche)
+1. Drücke `Win + R`, gib `certmgr.msc` ein (für den aktuellen Benutzer) oder `certlm.msc` (für den gesamten Computer) und drücke Enter.
+2. Navigiere zu **Vertrauenswürdige Stammzertifizierungsstellen** -> **Zertifikate**.
+3. Mache einen Rechtsklick auf den Ordner **Zertifikate** und wähle **Alle Aufgaben** -> **Importieren...**.
+4. Wähle die Datei `lan_root_ca.crt` aus (stelle sicher, dass der Dateifilter im Explorer auf "Alle Dateien" steht).
+5. Schließe den Assistenten ab. Die CA wird nun als vertrauenswürdig eingestuft.
+
+#### Per PowerShell (Administrator)
+```powershell
+Import-Certificate -FilePath .\lan_root_ca.crt -CertStoreLocation Cert:\LocalMachine\Root
+```
+
+---
+
+### macOS
+
+#### Per GUI (Schlüsselbundverwaltung)
+1. Öffne die App **Schlüsselbundverwaltung** (Keychain Access).
+2. Wähle links den Schlüsselbund **System** (oder "Anmeldung", falls du es nur für deinen Benutzer brauchst).
+3. Ziehe die Datei `lan_root_ca.crt` per Drag-and-Drop in die Liste der Zertifikate.
+4. Mache einen Doppelklick auf das importierte Zertifikat (`lan Internal Root CA`).
+5. Klappe den Bereich **Vertrauen** (Trust) auf und setze die Option **Bei Verwendung dieses Zertifikats** auf **Immer vertrauen** (Always Trust).
+6. Schließe das Fenster und autorisiere die Änderung mit deinem Passwort.
+
+#### Per Terminal (CLI)
+```bash
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain lan_root_ca.crt
+```
+
+---
+
+### iOS (iPhone / iPad)
+
+1. Sende die Datei `lan_root_ca.crt` per AirDrop auf dein iOS-Gerät, sende sie dir per E-Mail oder lade sie in deine iCloud Drive / **Dateien**-App.
+2. Tippe auf die Datei. Es erscheint der Hinweis, dass das Profil geladen wurde.
+3. Öffne die App **Einstellungen** -> ganz oben siehst du den Punkt **Profil geladen**. Tippe darauf und wähle oben rechts **Installieren**.
+4. Navigiere in den **Einstellungen** zu: **Allgemein** -> **Info** -> **Zertifikatsvertrauenseinstellungen** (ganz unten).
+5. Aktiviere unter "Volles Vertrauen für Root-Zertifikate aktivieren" den Schalter für **lan Internal Root CA**.
+
+---
+
+### Android
+
+*Hinweis: Je nach Android-Hersteller (Samsung, Google, Xiaomi, etc.) und OS-Version können die Menübezeichnungen variieren.*
+
+1. Übertrage die Datei `lan_root_ca.crt` auf den internen Speicher deines Android-Geräts (z.B. per USB, E-Mail oder Nextcloud).
+2. Öffne die **Einstellungen** deines Geräts.
+3. Navigiere zu **Sicherheit** -> **Erweiterte Einstellungen** -> **Verschlüsselung und Anmeldedaten** -> **Ein Zertifikat installieren** (oder suche in den Einstellungen direkt nach `CA-Zertifikat`).
+4. Wähle **CA-Zertifikat**.
+5. Bestätige die Sicherheitswarnung.
+6. Wähle die Datei `lan_root_ca.crt` aus dem Dateimanager aus und bestätige die Installation mit deiner PIN/Muster/Fingerabdruck.
+
+---
+
+## Reverse Proxy Konfiguration
+
+Für den externen Zugriff via `https://vault.lan` (z. B. über Nginx, HAProxy oder Apache) wurden folgende Zertifikate generiert:
+
+- **Zertifikat:** [reverse_proxy_vault.lan.crt](file:///home/joe/Development/hcv-proxomx/reverse_proxy_vault.lan.crt)
+- **Privater Schlüssel:** [reverse_proxy_vault.lan.key](file:///home/joe/Development/hcv-proxomx/reverse_proxy_vault.lan.key)
+- **Kombiniertes Bundle:** [reverse_proxy_vault.lan.pem](file:///home/joe/Development/hcv-proxomx/reverse_proxy_vault.lan.pem) (enthält Zertifikat, privaten Schlüssel und Root-CA)
+
+Verwende das kombinierte PEM-Bundle oder das Zertifikat+Key-Paar in deiner Reverse-Proxy-Konfiguration und leite den Traffic an die IP-Adressen der Vault-Nodes auf Port `8200` weiter.

@@ -1,0 +1,11 @@
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+terraform.tfvars
+ca.crt
+vault-keys.json
+lan_root_ca.crt
+reverse_proxy_vault.lan.crt
+reverse_proxy_vault.lan.key
+reverse_proxy_vault.lan.pem

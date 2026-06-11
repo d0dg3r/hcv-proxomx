@@ -1,0 +1,39 @@
+# Vault Configuration Template
+
+# Enable Vault UI
+ui = true
+
+# Local directory where Raft data is stored
+storage "raft" {
+  path    = "/opt/vault/data"
+  node_id = "${node_id}"
+
+  # Automatically join other nodes in the cluster
+  %{ for peer_ip in peer_ips ~}
+  retry_join {
+    leader_api_addr = "https://${peer_ip}:8200"
+    leader_ca_cert_file = "/etc/vault.d/ca.crt"
+  }
+  %{ endfor ~}
+}
+
+# TCP listener for API requests and UI
+listener "tcp" {
+  address            = "0.0.0.0:8200"
+  cluster_address    = "0.0.0.0:8201"
+  
+  # TLS configuration
+  tls_disable        = "false"
+  tls_cert_file      = "/etc/vault.d/vault.crt"
+  tls_key_file       = "/etc/vault.d/vault.key"
+  tls_client_ca_file = "/etc/vault.d/ca.crt"
+}
+
+# Advertised API address for client redirection
+api_addr = "https://${node_ip}:8200"
+
+# Cluster address for internal node-to-node replication traffic
+cluster_addr = "https://${node_ip}:8201"
+
+# Disable MLock as it is not supported in unprivileged LXC containers by default
+disable_mlock = true
