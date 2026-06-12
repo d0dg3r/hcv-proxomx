@@ -275,3 +275,43 @@ Jeder Benutzer (z. B. ein Administrator) kann nun einen kurzlebigen SSH-Schlüss
    ```bash
    ssh -i ~/.ssh/id_ed25519 root@dein-zielserver.lan
    ```
+
+---
+
+## ssh-sec: Automatisierter SSH-Zertifikats-Wrapper
+
+Um den manuellen Ablauf (Anmelden bei Vault, Schlüssel signieren lassen, SSH mit Zertifikat ausführen) vollständig zu automatisieren, wurde das Wrapper-Skript [ssh-sec](file:///home/joe/Development/hcv-proxomx/scripts/ssh-sec) entwickelt.
+
+### Installation
+
+Kopiere das Skript in ein Verzeichnis deines lokalen `$PATH` (z. B. `/usr/local/bin/`), damit du es systemweit nutzen kannst:
+
+```bash
+sudo cp scripts/ssh-sec /usr/local/bin/ssh-sec
+sudo chmod +x /usr/local/bin/ssh-sec
+```
+
+### Nutzung
+
+Du kannst `ssh-sec` genau wie den normalen `ssh`-Befehl verwenden. Es reicht alle zusätzlichen Parameter direkt an SSH weiter:
+
+```bash
+ssh-sec [user@]hostname [ssh_options]
+```
+
+#### Beispiele:
+```bash
+# Einfache Verbindung als Root
+ssh-sec root@10.1.3.221
+
+# Verbindung auf alternativem Port
+ssh-sec root@10.1.3.221 -p 2222
+```
+
+#### Funktionsweise im Hintergrund:
+1. **Ziel-Parsing:** Es ermittelt den Benutzernamen (z. B. `root`) und die IP/Hostname des Zielservers. Wird kein Benutzername angegeben, wird dein lokaler Linux-Benutzername verwendet.
+2. **Vault-Statusprüfung:** Es prüft, ob eine aktive Vault-Sitzung vorliegt. Falls nicht, fordert es dich interaktiv per `vault login` zur Authentifizierung auf.
+3. **Schlüsselerkennung:** Es sucht nach deinem lokalen SSH-Schlüssel (bevorzugt `~/.ssh/id_ed25519.pub`, sonst `~/.ssh/id_rsa.pub`).
+4. **Zertifikatssignierung:** Es lässt deinen öffentlichen Schlüssel bei Vault für den gewünschten Ziel-Benutzer (Principal) signieren und speichert das Zertifikat als `*-cert.pub` ab.
+5. **Verbindung:** Führt den originalen `ssh`-Befehl mit dem privaten Schlüssel und dem frisch signierten Zertifikat aus.
+
