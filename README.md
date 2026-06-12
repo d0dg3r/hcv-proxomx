@@ -446,6 +446,35 @@ Jeder Benutzer (z. B. ein Administrator) kann nun einen kurzlebigen SSH-Schlüss
 
 Um den manuellen Ablauf (Anmelden bei Vault, Schlüssel signieren lassen, SSH mit Zertifikat ausführen) vollständig zu automatisieren, wurden Wrapper-Skripte für Linux/macOS sowie für Windows bereitgestellt.
 
+### Voraussetzungen: Vault CLI Installation
+
+Beide Skripte setzen voraus, dass die offizielle **Vault CLI** auf deinem lokalen Rechner installiert ist:
+
+* **Linux (Debian/Ubuntu):**
+  ```bash
+  wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+  echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
+  sudo apt update && sudo apt install vault
+  ```
+* **Linux (RedHat/Rocky Linux):**
+  ```bash
+  sudo yum install -y yum-utils
+  sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
+  sudo yum install vault
+  ```
+* **macOS (Homebrew):**
+  ```bash
+  brew tap hashicorp/tap
+  brew install hashicorp/tap/vault
+  ```
+* **Windows (PowerShell / Winget):**
+  ```powershell
+  winget install HashiCorp.Vault
+  ```
+  *(Alternativ kann die Binärdatei direkt von der [HashiCorp Website](https://developer.hashicorp.com/vault/install) heruntergeladen und in den Windows-`PATH` gelegt werden).*
+
+---
+
 ### Linux / macOS (`ssh-sec`)
 
 #### Installation
