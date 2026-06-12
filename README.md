@@ -16,6 +16,9 @@ Die Container basieren auf Rocky Linux 10 LXCs. Die interne Kommunikation sowie 
 - [Speicherorte der Secrets in Vault](#speicherorte-der-secrets-in-vault)
 - [SSH Key Signing (Client-Zertifikate)](#ssh-key-signing-client-zertifikate)
   - [Server-Konfiguration](#server-konfiguration)
+    - [Option A: Automatische Einrichtung](#option-a-automatische-einrichtung-uber-das-skript-empfohlen)
+    - [Option B: Manuelle Einrichtung](#option-b-manuelle-einrichtung)
+    - [Option C: Zugriff einschränken über Authorized Principals (Optional)](#option-c-zugriff-einschranken-uber-authorized-principals-optional)
   - [SSH-Rollen und Benutzerberechtigungen (Policies)](#ssh-rollen-und-benutzerberechtigungen-policies)
   - [Client-Nutzung (Wie man sich anmeldet)](#client-nutzung-wie-man-sich-anmeldet)
 - [ssh-sec: Automatisierter SSH-Zertifikats-Wrapper](#ssh-sec-automatisierter-ssh-zertifikats-wrapper)
@@ -280,6 +283,37 @@ Falls du die Konfiguration lieber manuell durchführen möchtest:
      ```
 
 Nun vertraut der SSH-Dienst dieses Servers jedem SSH-Schlüssel, der von der Vault-CA signiert wurde.
+
+#### Option C: Zugriff einschränken über Authorized Principals (Optional)
+
+Standardmäßig erlaubt der SSH-Dienst nach der Einrichtung jedem Benutzer, der ein von der Vault-CA signiertes Zertifikat besitzt, den Login (sofern der Benutzername im Zertifikat enthalten ist). Wenn du einschränken möchtest, welche Zertifikate auf welchen Servern erlaubt sind, kannst du **Authorized Principals** nutzen.
+
+1. **sshd-Konfiguration anpassen:**
+   Füge folgende Zeile in die `/etc/ssh/sshd_config` auf dem Zielserver hinzu:
+   
+   ```text
+   AuthorizedPrincipalsFile /etc/ssh/authorized_principals/%u
+   ```
+
+2. **Erlaubte Principals definieren:**
+   Erstelle auf dem Zielserver die Datei `/etc/ssh/authorized_principals/root` (für den Login als `root`) und trage dort ein oder mehrere Merkmale (Principals) ein, die im Zertifikat stehen müssen (jeweils eines pro Zeile):
+   
+   ```text
+   vault-admin-access
+   pve-global-admin
+   ```
+
+3. **SSH-Dienst neu starten:**
+   * Auf RedHat/Arch/Rocky Linux:
+     ```bash
+     systemctl restart sshd
+     ```
+   * Auf Debian/Ubuntu:
+     ```bash
+     systemctl restart ssh
+     ```
+
+Wenn sich nun jemand als `root` anmeldet, prüft der SSH-Dienst, ob das Zertifikat von der CA signiert wurde **und** ob das Zertifikat das Principal `vault-admin-access` oder `pve-global-admin` enthält. Falls nicht, wird der Login blockiert, selbst wenn das Zertifikat von derselben CA ausgestellt wurde.
 
 ---
 
