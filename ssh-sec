@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+#
+# ssh-sec: A wrapper script to transparently authenticate with Vault,
+# sign your SSH key, and connect to a target host using the signed certificate.
+#
+# Usage:
+#   ssh-sec [user@]hostname [ssh_options]
+#
+
+set -euo pipefail
+
+# Display usage if no arguments provided
+if [ $# -lt 1 ]; then
+    echo "Usage: ssh-sec [user@]hostname [ssh_options]"
+    echo "Example: ssh-sec root@10.1.3.221"
+    echo "Example: ssh-sec 10.1.3.222 -p 22"
+    exit 1
+fi
+
+# 1. Parse target user and host
+TARGET="$1"
+if [[ "$TARGET" == *@* ]]; then
+    TARGET_USER="${TARGET%%@*}"
+    TARGET_HOST="${TARGET##*@}"
+else
+    TARGET_USER="$USER"
+    TARGET_HOST="$TARGET"
+fi
+
+# 2. Locate client SSH key pair
+SSH_DIR="$HOME/.ssh"
+if [ -f "$SSH_DIR/id_ed25519.pub" ]; then
+    PUB_KEY_PATH="$SSH_DIR/id_ed25519.pub"
+    PRIV_KEY_PATH="$SSH_DIR/id_ed25519"
+elif [ -f "$SSH_DIR/id_rsa.pub" ]; then
+    PUB_KEY_PATH="$SSH_DIR/id_rsa.pub"
+    PRIV_KEY_PATH="$SSH_DIR/id_rsa"
+else
+    echo "Error: No SSH public key found." >&2
+    echo "Please generate one first using: ssh-keygen -t ed25519" >&2
+    exit 1
+fi
+
+CERT_PATH="${PRIV_KEY_PATH}-cert.pub"
+
+# 3. Configure Vault address and CA certificate
+export VAULT_ADDR="${VAULT_ADDR:-https://vault.lan}"
+
+# Try to find the CA certificate to avoid trust issues if not in system trust store
+if [ -z "${VAULT_CACERT:-}" ]; then
+    # Check current directory, then ~/.ssh, then /home/joe/Development/hcv-proxomx
+    if [ -f "lan_root_ca.crt" ]; then
+        export VAULT_CACERT="$(pwd)/lan_root_ca.crt"
+    elif [ -f "$SSH_DIR/lan_root_ca.crt" ]; then
+        export VAULT_CACERT="$SSH_DIR/lan_root_ca.crt"
+    elif [ -f "/home/joe/Development/hcv-proxomx/lan_root_ca.crt" ]; then
+        export VAULT_CACERT="/home/joe/Development/hcv-proxomx/lan_root_ca.crt"
+    fi
+fi
+
+# 4. Ensure user is authenticated with Vault
+if ! vault token lookup >/dev/null 2>&1; then
+    echo "Vault token missing or expired. Authenticating..."
+    # Prompt for login
+    if ! vault login -method=userpass; then
+        echo "Error: Vault authentication failed." >&2
+        exit 1
+    fi
+fi
+
+# 5. Sign the SSH public key for the target user (principal)
+echo "Requesting SSH certificate from Vault for user '$TARGET_USER'..."
+if ! vault write -field=signed_key ssh-client-signer/sign/client-role \
+    public_key=@"$PUB_KEY_PATH" \
+    valid_principals="$TARGET_USER" > "$CERT_PATH"; then
+    echo "Error: Vault failed to sign the SSH key." >&2
+    exit 1
+fi
+
+# Set proper permissions on the certificate
+chmod 644 "$CERT_PATH"
+echo "Certificate successfully generated and saved to: $CERT_PATH"
+
+# 6. Execute the real ssh command, forwarding all arguments
+echo "Connecting to $TARGET_HOST..."
+exec ssh -i "$PRIV_KEY_PATH" -i "$CERT_PATH" "$@"
