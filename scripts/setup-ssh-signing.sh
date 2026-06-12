@@ -59,7 +59,7 @@ fi
 vault kv put secret/ssh-ca public_key=@"$SSH_CA_PUB"
 echo "SSH CA public key successfully backed up in Vault at secret/ssh-ca."
 
-# 4. Create an SSH role for signing client keys
+# 4. Create SSH roles for signing client keys
 echo "Creating SSH role 'client-role' with 30-minute max TTL..."
 vault write ssh-client-signer/roles/client-role - <<EOF
 {
@@ -75,11 +75,26 @@ vault write ssh-client-signer/roles/client-role - <<EOF
 }
 EOF
 
+echo "Creating SSH role 'admin-role' (with agent forwarding) with 30-minute max TTL..."
+vault write ssh-client-signer/roles/admin-role - <<EOF
+{
+  "key_type": "ca",
+  "allow_user_certificates": true,
+  "allowed_users": "root,admin",
+  "default_extensions": {
+    "permit-pty": "",
+    "permit-port-forwarding": "",
+    "permit-agent-forwarding": ""
+  },
+  "max_ttl": "30m",
+  "ttl": "10m"
+}
+EOF
 
 echo "----------------------------------------"
 echo "SSH Secrets Engine successfully configured!"
-echo "Role Name: client-role"
+echo "Role Names: client-role, admin-role"
 echo "SSH CA Public Key: $SSH_CA_PUB"
 echo "----------------------------------------"
-echo "To sign a client key, use the CLI:"
-echo "  vault write -field=signed_key ssh-client-signer/sign/client-role public_key=@~/.ssh/id_ed25519.pub > ~/.ssh/id_ed25519-cert.pub"
+echo "To sign a key using admin-role, run:"
+echo "  vault write -field=signed_key ssh-client-signer/sign/admin-role public_key=@~/.ssh/id_ed25519.pub valid_principals=\"root\" > ~/.ssh/id_ed25519-cert.pub"
