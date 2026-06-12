@@ -10,8 +10,8 @@ set -euo pipefail
 CA_PATH="/etc/ssh/trusted-user-ca-keys.pem"
 SSHD_CONFIG="/etc/ssh/sshd_config"
 
-# Embedded Vault SSH CA Public Key (vault_ssh_ca.pub)
-SSH_CA_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDkoN1/FfSryALDKzNWwU0eE6l1x0Ptx6Mclc8bUIYqrJckH4kNKMN0m0D3odBok/VIv0zujA+1seaz14e81/yJ5LSIff3VU4+glRvyqRoP0qdkn0vn4JfpehzJbIbtj2Gr7y+JMSrutFozisn0hA3lwTc2gLr25kOUOZrV7kjrbU+abvo6wBuvjeIIl1B8V2Usoyq3q299/DsnmV80asqzrxqBpk9P/jMsF/lIY+Ex7Tit/POfzlzOYghmtR1AiJa6PJ624xp/WfVmIhGlDE5nE8zDIxaOptqo+E12oxBC+E1QIZQyhIPLTY4Yq58fN12NXY6/4x8XfQJDFRo4Qki0ChCtAmcnR7A2OHmZLCOvkcKyWFVuqhV07c7rij5OVsxqespkeJtHF6a/6TuATNdEQaW6nw/EMX7qnOlSl0YwOFaOaZlWyKsIni4arMokNKCf50O5lb+nN2fp4mmb83SJjyO5SM9d10E2XUCbfiokXVrhbIfCYQQDoAcPmAXZFO1pTN23NiaS6DcXE3gdq6LhSgKq3phC1OIkQ00hOetp92vowVyLRIiULAQ6vJXppxM8Zj1kSv1AQsMwpddP3ScLEzM+dOlhyXMc04gOjaebuhfYFb9iUaFlLTURx21kCF4G51mMA/KunF4dT7YJYNUemJuPa6IAPmvZLP8HofKQcw=="
+# Get Vault address from argument or environment variable, default to https://vault.lan
+VAULT_ADDR="${1:-${VAULT_ADDR:-https://vault.lan}}"
 
 # Ensure script is run as root
 if [ "$EUID" -ne 0 ]; then
@@ -20,8 +20,23 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 echo "=== Starting Vault SSH CA Installation ==="
+echo "Vault Address: $VAULT_ADDR"
 
-# 1. Write the CA public key to the target path
+# 1. Fetch the SSH CA public key from Vault
+echo "Fetching SSH CA public key from Vault..."
+if ! SSH_CA_KEY=$(curl -k -s -f "${VAULT_ADDR}/v1/ssh-client-signer/public_key"); then
+    echo "Error: Failed to fetch SSH CA public key from Vault at ${VAULT_ADDR}/v1/ssh-client-signer/public_key" >&2
+    echo "Please check if Vault is running and accessible." >&2
+    exit 1
+fi
+
+# Verify the response is a valid SSH key
+if [[ ! "$SSH_CA_KEY" =~ ^ssh- ]]; then
+    echo "Error: Retrieved key content does not look like a valid SSH public key." >&2
+    echo "Content received: $SSH_CA_KEY" >&2
+    exit 1
+fi
+
 echo "Writing Vault SSH CA key to $CA_PATH..."
 echo "$SSH_CA_KEY" > "$CA_PATH"
 
