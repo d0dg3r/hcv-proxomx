@@ -6,6 +6,22 @@ Die Container basieren auf Rocky Linux 10 LXCs. Die interne Kommunikation sowie 
 
 ---
 
+## Inhaltsverzeichnis
+
+- [Architektur & Infrastruktur](#architektur-infrastruktur)
+- [Repository-Struktur und Dateien](#repository-struktur-und-dateien)
+- [Step-by-Step Setup-Anleitung](#step-by-step-setup-anleitung)
+- [Vertrauensstellung auf Clients einrichten](#vertrauensstellung-auf-clients-einrichten)
+- [Reverse Proxy Konfiguration](#reverse-proxy-konfiguration)
+- [Speicherorte der Secrets in Vault](#speicherorte-der-secrets-in-vault)
+- [SSH Key Signing (Client-Zertifikate)](#ssh-key-signing-client-zertifikate)
+  - [Server-Konfiguration](#server-konfiguration)
+  - [SSH-Rollen und Benutzerberechtigungen (Policies)](#ssh-rollen-und-benutzerberechtigungen-policies)
+  - [Client-Nutzung (Wie man sich anmeldet)](#client-nutzung-wie-man-sich-anmeldet)
+- [ssh-sec: Automatisierter SSH-Zertifikats-Wrapper](#ssh-sec-automatisierter-ssh-zertifikats-wrapper)
+
+---
+
 ## Architektur & Infrastruktur
 
 - **Plattform:** 3x unprivilegierte Rocky Linux 10 LXC-Container auf Proxmox VE.
@@ -264,6 +280,88 @@ Falls du die Konfiguration lieber manuell durchführen möchtest:
      ```
 
 Nun vertraut der SSH-Dienst dieses Servers jedem SSH-Schlüssel, der von der Vault-CA signiert wurde.
+
+---
+
+### SSH-Rollen und Benutzerberechtigungen (Policies)
+
+Vault regelt den SSH-Zugriff über Rollen (die definieren, welche Optionen erlaubt sind) und Policies (die festlegen, welcher Vault-Benutzer auf welche Rolle zugreifen darf).
+
+#### 1. SSH-Rolle in Vault erstellen
+Eine Rolle definiert die maximal erlaubte Gültigkeitsdauer (`max_ttl`), die erlaubten Unix-Benutzernamen (`allowed_users`) und die aktivierten SSH-Erweiterungen (z. B. Terminal-Zugriff oder Port-Weiterleitungen).
+
+Beispiel zum Erstellen einer restriktiven Admin-Rolle für `root` (inklusive Agent-Forwarding):
+```bash
+vault write ssh-client-signer/roles/admin-role - <<EOF
+{
+  "key_type": "ca",
+  "allow_user_certificates": true,
+  "allowed_users": "root,admin",
+  "default_extensions": {
+    "permit-pty": "",
+    "permit-port-forwarding": "",
+    "permit-agent-forwarding": ""
+  },
+  "max_ttl": "30m",
+  "ttl": "10m"
+}
+EOF
+```
+
+#### 2. Berechtigungs-Richtlinien (Policies) definieren
+Erstelle lokale HCL-Dateien, um die Rechte für die Rollen einzuschränken.
+
+* **Richtliniendatei für Entwickler (`dev-ssh.hcl`):**
+  ```hcl
+  # Erlaubt nur das Signieren über die client-role
+  path "ssh-client-signer/sign/client-role" {
+    capabilities = ["create", "update"]
+  }
+  ```
+
+* **Richtliniendatei für Administratoren (`admin-ssh.hcl`):**
+  ```hcl
+  # Erlaubt das Signieren über die admin-role und client-role
+  path "ssh-client-signer/sign/admin-role" {
+    capabilities = ["create", "update"]
+  }
+  path "ssh-client-signer/sign/client-role" {
+    capabilities = ["create", "update"]
+  }
+  ```
+
+Registriere die Richtlinien in Vault (als Admin/Root):
+```bash
+vault policy write dev-ssh-policy dev-ssh.hcl
+vault policy write admin-ssh-policy admin-ssh.hcl
+```
+
+#### 3. Richtlinie (Policy) einem Benutzer zuordnen
+
+##### Über die Befehlszeile (CLI)
+Ordne die erstellte Policy dem gewünschten Benutzer im `userpass`-Backend zu:
+
+```bash
+# Weist dem Benutzer "chefentwickler" die dev-ssh-policy zu
+vault write auth/userpass/users/chefentwickler policies="dev-ssh-policy"
+
+# Weist dem Benutzer "joe" die admin-ssh-policy zu
+vault write auth/userpass/users/joe policies="admin-ssh-policy"
+```
+
+##### Über die Weboberfläche (Web UI)
+1. **Einloggen**: Rufe `https://vault.lan` auf und melde dich als `admin` an.
+2. **Policy anlegen**: 
+   - Gehe im oberen Menü auf **Policies** -> **Create ACL policy**.
+   - Gib der Policy einen Namen (z. B. `admin-ssh-policy`) und füge den HCL-Inhalt aus Schritt 2 ein.
+   - Klicke auf **Create policy**.
+3. **Policy zuweisen**:
+   - Gehe im oberen Menü auf **Access** -> **Auth Methods** -> **userpass**.
+   - Klicke bei dem gewünschten Benutzer auf die drei Punkte (`...`) ganz rechts und wähle **Edit user**.
+   - Trage im Feld **Generated Token's Policies** den Namen der Policy ein (z. B. `admin-ssh-policy`).
+   - Klicke auf **Save**.
+
+---
 
 ### Client-Nutzung (Wie man sich anmeldet)
 
