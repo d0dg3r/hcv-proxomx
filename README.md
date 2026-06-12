@@ -462,6 +462,10 @@ Beide Skripte setzen voraus, dass die offizielle **Vault CLI** auf deinem lokale
   sudo yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
   sudo yum install vault
   ```
+* **Linux (Arch Linux / Derivate):**
+  ```bash
+  sudo pacman -S vault
+  ```
 * **macOS (Homebrew):**
   ```bash
   brew tap hashicorp/tap
