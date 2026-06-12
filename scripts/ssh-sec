@@ -48,13 +48,12 @@ export VAULT_ADDR="${VAULT_ADDR:-https://vault.lan}"
 
 # Try to find the CA certificate to avoid trust issues if not in system trust store
 if [ -z "${VAULT_CACERT:-}" ]; then
-    # Check current directory, then ~/.ssh, then /home/joe/Development/hcv-proxomx
-    if [ -f "lan_root_ca.crt" ]; then
-        export VAULT_CACERT="$(pwd)/lan_root_ca.crt"
-    elif [ -f "$SSH_DIR/lan_root_ca.crt" ]; then
+    if [ -f "$SSH_DIR/lan_root_ca.crt" ]; then
         export VAULT_CACERT="$SSH_DIR/lan_root_ca.crt"
-    elif [ -f "/home/joe/Development/hcv-proxomx/lan_root_ca.crt" ]; then
-        export VAULT_CACERT="/home/joe/Development/hcv-proxomx/lan_root_ca.crt"
+    elif [ -f "secrets/lan_root_ca.crt" ]; then
+        export VAULT_CACERT="$(pwd)/secrets/lan_root_ca.crt"
+    elif [ -f "lan_root_ca.crt" ]; then
+        export VAULT_CACERT="$(pwd)/lan_root_ca.crt"
     fi
 fi
 

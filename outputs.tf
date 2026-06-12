@@ -17,12 +17,13 @@ output "ca_certificate" {
 output "initialization_instructions" {
   description = "Steps to initialize and unseal the Vault cluster"
   value       = <<EOT
-1. Save the CA Certificate to a local file:
-   terraform output -raw ca_certificate > ca.crt
+1. Save the CA Certificate to a local file inside the secrets directory:
+   mkdir -p secrets
+   terraform output -raw ca_certificate > secrets/ca.crt
 
 2. Initialize the Vault cluster on the first node:
    export VAULT_ADDR="https://${split("/", var.vault_ips[0])[0]}:8200"
-   export VAULT_CACERT="$(pwd)/ca.crt"
+   export VAULT_CACERT="$(pwd)/secrets/ca.crt"
    vault operator init -key-shares=5 -key-threshold=3
 
 3. Unseal the first node:

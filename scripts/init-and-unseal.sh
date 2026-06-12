@@ -2,8 +2,13 @@
 set -euo pipefail
 
 # Config
-KEYS_FILE="vault-keys.json"
-CA_FILE="ca.crt"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SECRETS_DIR="$WORKSPACE_DIR/secrets"
+mkdir -p "$SECRETS_DIR"
+
+KEYS_FILE="$SECRETS_DIR/vault-keys.json"
+CA_FILE="$SECRETS_DIR/ca.crt"
 NODES=("10.1.3.221" "10.1.3.222" "10.1.3.223")
 PRIMARY_NODE="10.1.3.221"
 
@@ -12,10 +17,10 @@ echo "=== Vault Cluster Initialization and Unseal Script ==="
 # 1. Save CA cert from terraform output if not already present
 if [ ! -f "$CA_FILE" ]; then
     echo "Saving CA Certificate from Terraform output..."
-    terraform output -raw ca_certificate > "$CA_FILE"
+    (cd "$WORKSPACE_DIR" && terraform output -raw ca_certificate) > "$CA_FILE"
 fi
 
-export VAULT_CACERT="$(pwd)/$CA_FILE"
+export VAULT_CACERT="$CA_FILE"
 
 # 2. Initialize Vault if keys file doesn't exist
 if [ ! -f "$KEYS_FILE" ]; then
@@ -95,5 +100,18 @@ sleep 5
 # 4. Check Raft cluster status
 echo "Checking Raft peers on $PRIMARY_NODE..."
 VAULT_TOKEN="$ROOT_TOKEN" vault operator raft list-peers -address="https://${PRIMARY_NODE}:8200"
+
+# 5. Store keys in Vault KV engine
+echo "Storing keys in Vault KV engine..."
+export VAULT_TOKEN="$ROOT_TOKEN"
+export VAULT_ADDR="https://${PRIMARY_NODE}:8200"
+
+if ! vault secrets list -format=json | jq -e '."secret/"' >/dev/null; then
+    echo "Enabling KV v2 secrets engine at secret/..."
+    vault secrets enable -path=secret kv-v2
+fi
+
+vault kv put secret/vault-keys @"$KEYS_FILE"
+echo "vault-keys.json successfully backed up in Vault at secret/vault-keys."
 
 echo "=== Vault Cluster Setup Complete ==="

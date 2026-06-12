@@ -29,10 +29,13 @@ Die Container basieren auf Rocky Linux 10 LXCs. Die interne Kommunikation sowie 
   - [templates/vault.hcl.tftpl](file:///home/joe/Development/hcv-proxomx/templates/vault.hcl.tftpl): Jinja/Terraform-Template für die Vault-Konfigurationsdatei (`/etc/vault.d/vault.hcl`).
   - [scripts/install-vault.sh](file:///home/joe/Development/hcv-proxomx/scripts/install-vault.sh): Installiert das offizielle HashiCorp Vault-Repository und -Paket auf Rocky Linux 10.
 - **Betriebs- und Setup-Skripte (Lokal auszuführen):**
-  - [init-and-unseal.sh](file:///home/joe/Development/hcv-proxomx/init-and-unseal.sh): Initialisiert das Vault-Cluster und entsiegelt (unseals) alle 3 Nodes automatisch.
-  - [create-admin-user.sh](file:///home/joe/Development/hcv-proxomx/create-admin-user.sh): Aktiviert das `userpass`-Backend und legt einen Admin-Benutzer mit Vollrechten an.
-  - [setup-pki.sh](file:///home/joe/Development/hcv-proxomx/setup-pki.sh): Konfiguriert die interne Root-CA für die Domain `.lan` in Vault (20 Jahre Gültigkeit).
-  - [replace-vault-certs.sh](file:///home/joe/Development/hcv-proxomx/replace-vault-certs.sh): Erstellt neue 10-Jahres-Zertifikate für die Nodes sowie den Reverse Proxy, verteilt diese und führt einen Rolling Restart der Nodes durch.
+  - [scripts/init-and-unseal.sh](file:///home/joe/Development/hcv-proxomx/scripts/init-and-unseal.sh): Initialisiert das Vault-Cluster und entsiegelt (unseals) alle 3 Nodes automatisch.
+  - [scripts/create-admin-user.sh](file:///home/joe/Development/hcv-proxomx/scripts/create-admin-user.sh): Aktiviert das `userpass`-Backend und legt einen Admin-Benutzer mit Vollrechten an.
+  - [scripts/setup-pki.sh](file:///home/joe/Development/hcv-proxomx/scripts/setup-pki.sh): Konfiguriert die interne Root-CA für die Domain `.lan` in Vault (20 Jahre Gültigkeit).
+  - [scripts/replace-vault-certs.sh](file:///home/joe/Development/hcv-proxomx/scripts/replace-vault-certs.sh): Erstellt neue 10-Jahres-Zertifikate für die Nodes sowie den Reverse Proxy, verteilt diese und führt einen Rolling Restart der Nodes durch.
+  - [scripts/setup-ssh-signing.sh](file:///home/joe/Development/hcv-proxomx/scripts/setup-ssh-signing.sh): Konfiguriert das SSH-Client-Key-Signing in Vault.
+  - [scripts/install-ssh-ca.sh](file:///home/joe/Development/hcv-proxomx/scripts/install-ssh-ca.sh): Installiert den CA-Key auf einem beliebigen Server.
+  - [scripts/ssh-sec](file:///home/joe/Development/hcv-proxomx/scripts/ssh-sec): Ein Wrapper für nahtloses SSH-Key-Signing und Login.
 
 ---
 
@@ -51,16 +54,16 @@ Dies lädt das Rocky Linux 10 Template herunter, erstellt die LXCs, installiert 
 Führe das unseal-Skript aus, um das Cluster zu initialisieren und die Nodes zu entsiegeln:
 
 ```bash
-./init-and-unseal.sh
+./scripts/init-and-unseal.sh
 ```
 > [!IMPORTANT]
-> Dieses Skript generiert die Datei `vault-keys.json`, welche den Root-Token sowie die Unseal-Keys enthält. Diese Datei ist in `.gitignore` eingetragen und sollte streng vertraulich behandelt werden.
+> Dieses Skript generiert die Datei `secrets/vault-keys.json`, welche den Root-Token sowie die Unseal-Keys enthält. Diese Datei befindet sich im `secrets/`-Ordner, ist in `.gitignore` eingetragen und sollte streng vertraulich behandelt werden.
 
 ### 3. Administrator-Konto erstellen
 Um nicht dauerhaft den Root-Token verwenden zu müssen, erstellen wir einen Admin-Benutzer:
 
 ```bash
-./create-admin-user.sh
+./scripts/create-admin-user.sh
 ```
 Das Skript gibt den Benutzernamen (`admin`) und ein zufällig generiertes Passwort aus. Du kannst dich damit unter `https://10.1.3.221:8200` im UI einloggen.
 
@@ -68,45 +71,45 @@ Das Skript gibt den Benutzernamen (`admin`) und ein zufällig generiertes Passwo
 Um Zertifikate für die lokale Infrastruktur auszustellen, richten wir eine PKI secrets engine ein:
 
 ```bash
-./setup-pki.sh
+./scripts/setup-pki.sh
 ```
-Dadurch wird die `lan_root_ca.crt` mit 20 Jahren Gültigkeit erstellt und eine Rolle `lan` für 10 Jahre gültige Zertifikate definiert.
+Dadurch wird die `secrets/lan_root_ca.crt` mit 20 Jahren Gültigkeit erstellt und eine Rolle `lan` für 10 Jahre gültige Zertifikate definiert.
 
 ### 5. Zertifikate austauschen (Rolling Replacement)
 Ersetze die temporären Bootstrap-Zertifikate der Nodes durch die neuen 10-Jahres-Zertifikate der Vault-PKI:
 
 ```bash
-./replace-vault-certs.sh
+./scripts/replace-vault-certs.sh
 ```
 Dieses Skript:
 1. Erstellt neue Zertifikate für alle Nodes und den Reverse Proxy.
 2. Lädt die Zertifikate auf die LXC-Nodes hoch.
 3. Startet die Vault-Dienste nacheinander neu und entsiegelt die Nodes wieder automatisch.
-4. Erstellt die Datei [lan_root_ca.crt](file:///home/joe/Development/hcv-proxomx/lan_root_ca.crt) lokal.
+4. Erstellt die Datei [lan_root_ca.crt](file:///home/joe/Development/hcv-proxomx/secrets/lan_root_ca.crt) lokal im `secrets/`-Verzeichnis.
 
 ---
 
 ## Vertrauensstellung auf Clients einrichten
 
-Damit deine lokalen Clients (z. B. dein Browser oder das CLI) den Zertifikaten von Vault und dem Reverse Proxy vertrauen, muss das Root-CA-Zertifikat ([lan_root_ca.crt](file:///home/joe/Development/hcv-proxomx/lan_root_ca.crt)) auf den jeweiligen Systemen importiert werden.
+Damit deine lokalen Clients (z. B. dein Browser oder das CLI) den Zertifikaten von Vault und dem Reverse Proxy vertrauen, muss das Root-CA-Zertifikat ([lan_root_ca.crt](file:///home/joe/Development/hcv-proxomx/secrets/lan_root_ca.crt)) auf den jeweiligen Systemen importiert werden.
 
 ### Linux
 
 #### Arch Linux (Host)
 ```bash
-sudo cp lan_root_ca.crt /etc/ca-certificates/trust-source/anchors/vault_lan_root_ca.crt
+sudo cp secrets/lan_root_ca.crt /etc/ca-certificates/trust-source/anchors/vault_lan_root_ca.crt
 sudo trust extract-compat
 ```
 
 #### Debian / Ubuntu
 ```bash
-sudo cp lan_root_ca.crt /usr/local/share/ca-certificates/vault_lan_root_ca.crt
+sudo cp secrets/lan_root_ca.crt /usr/local/share/ca-certificates/vault_lan_root_ca.crt
 sudo update-ca-certificates
 ```
 
 #### RHEL / Rocky Linux / Fedora
 ```bash
-sudo cp lan_root_ca.crt /etc/pki/ca-trust/source/anchors/vault_lan_root_ca.crt
+sudo cp secrets/lan_root_ca.crt /etc/pki/ca-trust/source/anchors/vault_lan_root_ca.crt
 sudo update-ca-trust
 ```
 
@@ -118,12 +121,12 @@ sudo update-ca-trust
 1. Drücke `Win + R`, gib `certmgr.msc` ein (für den aktuellen Benutzer) oder `certlm.msc` (für den gesamten Computer) und drücke Enter.
 2. Navigiere zu **Vertrauenswürdige Stammzertifizierungsstellen** -> **Zertifikate**.
 3. Mache einen Rechtsklick auf den Ordner **Zertifikate** und wähle **Alle Aufgaben** -> **Importieren...**.
-4. Wähle die Datei `lan_root_ca.crt` aus (stelle sicher, dass der Dateifilter im Explorer auf "Alle Dateien" steht).
+4. Wähle die Datei `secrets/lan_root_ca.crt` aus (stelle sicher, dass der Dateifilter im Explorer auf "Alle Dateien" steht).
 5. Schließe den Assistenten ab. Die CA wird nun als vertrauenswürdig eingestuft.
 
 #### Per PowerShell (Administrator)
 ```powershell
-Import-Certificate -FilePath .\lan_root_ca.crt -CertStoreLocation Cert:\LocalMachine\Root
+Import-Certificate -FilePath .\secrets\lan_root_ca.crt -CertStoreLocation Cert:\LocalMachine\Root
 ```
 
 ---
@@ -133,21 +136,21 @@ Import-Certificate -FilePath .\lan_root_ca.crt -CertStoreLocation Cert:\LocalMac
 #### Per GUI (Schlüsselbundverwaltung)
 1. Öffne die App **Schlüsselbundverwaltung** (Keychain Access).
 2. Wähle links den Schlüsselbund **System** (oder "Anmeldung", falls du es nur für deinen Benutzer brauchst).
-3. Ziehe die Datei `lan_root_ca.crt` per Drag-and-Drop in die Liste der Zertifikate.
+3. Ziehe die Datei `secrets/lan_root_ca.crt` per Drag-and-Drop in die Liste der Zertifikate.
 4. Mache einen Doppelklick auf das importierte Zertifikat (`lan Internal Root CA`).
 5. Klappe den Bereich **Vertrauen** (Trust) auf und setze die Option **Bei Verwendung dieses Zertifikats** auf **Immer vertrauen** (Always Trust).
 6. Schließe das Fenster und autorisiere die Änderung mit deinem Passwort.
 
 #### Per Terminal (CLI)
 ```bash
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain lan_root_ca.crt
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain secrets/lan_root_ca.crt
 ```
 
 ---
 
 ### iOS (iPhone / iPad)
 
-1. Sende die Datei `lan_root_ca.crt` per AirDrop auf dein iOS-Gerät, sende sie dir per E-Mail oder lade sie in deine iCloud Drive / **Dateien**-App.
+1. Sende die Datei `secrets/lan_root_ca.crt` per AirDrop auf dein iOS-Gerät, sende sie dir per E-Mail oder lade sie in deine iCloud Drive / **Dateien**-App.
 2. Tippe auf die Datei. Es erscheint der Hinweis, dass das Profil geladen wurde.
 3. Öffne die App **Einstellungen** -> ganz oben siehst du den Punkt **Profil geladen**. Tippe darauf und wähle oben rechts **Installieren**.
 4. Navigiere in den **Einstellungen** zu: **Allgemein** -> **Info** -> **Zertifikatsvertrauenseinstellungen** (ganz unten).
@@ -159,12 +162,12 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 
 *Hinweis: Je nach Android-Hersteller (Samsung, Google, Xiaomi, etc.) und OS-Version können die Menübezeichnungen variieren.*
 
-1. Übertrage die Datei `lan_root_ca.crt` auf den internen Speicher deines Android-Geräts (z.B. per USB, E-Mail oder Nextcloud).
+1. Übertrage die Datei `secrets/lan_root_ca.crt` auf den internen Speicher deines Android-Geräts (z.B. per USB, E-Mail oder Nextcloud).
 2. Öffne die **Einstellungen** deines Geräts.
 3. Navigiere zu **Sicherheit** -> **Erweiterte Einstellungen** -> **Verschlüsselung und Anmeldedaten** -> **Ein Zertifikat installieren** (oder suche in den Einstellungen direkt nach `CA-Zertifikat`).
 4. Wähle **CA-Zertifikat**.
 5. Bestätige die Sicherheitswarnung.
-6. Wähle die Datei `lan_root_ca.crt` aus dem Dateimanager aus und bestätige die Installation mit deiner PIN/Muster/Fingerabdruck.
+6. Wähle die Datei `secrets/lan_root_ca.crt` aus dem Dateimanager aus und bestätige die Installation mit deiner PIN/Muster/Fingerabdruck.
 
 ---
 
@@ -172,9 +175,9 @@ sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keyc
 
 Für den externen Zugriff via `https://vault.lan` (z. B. über Nginx, HAProxy oder Apache) wurden folgende Zertifikate generiert:
 
-- **Zertifikat:** [reverse_proxy_vault.lan.crt](file:///home/joe/Development/hcv-proxomx/reverse_proxy_vault.lan.crt)
-- **Privater Schlüssel:** [reverse_proxy_vault.lan.key](file:///home/joe/Development/hcv-proxomx/reverse_proxy_vault.lan.key)
-- **Kombiniertes Bundle:** [reverse_proxy_vault.lan.pem](file:///home/joe/Development/hcv-proxomx/reverse_proxy_vault.lan.pem) (enthält Zertifikat, privaten Schlüssel und Root-CA)
+- **Zertifikat:** [reverse_proxy_vault.lan.crt](file:///home/joe/Development/hcv-proxomx/secrets/reverse_proxy_vault.lan.crt)
+- **Privater Schlüssel:** [reverse_proxy_vault.lan.key](file:///home/joe/Development/hcv-proxomx/secrets/reverse_proxy_vault.lan.key)
+- **Kombiniertes Bundle:** [reverse_proxy_vault.lan.pem](file:///home/joe/Development/hcv-proxomx/secrets/reverse_proxy_vault.lan.pem) (enthält Zertifikat, privaten Schlüssel und Root-CA)
 
 Verwende das kombinierte PEM-Bundle oder das Zertifikat+Key-Paar in deiner Reverse-Proxy-Konfiguration und leite den Traffic an die IP-Adressen der Vault-Nodes auf Port `8200` weiter.
 
@@ -184,15 +187,15 @@ Verwende das kombinierte PEM-Bundle oder das Zertifikat+Key-Paar in deiner Rever
 
 Mit dem SSH-Zertifikats-Signierungs-Verfahren von Vault müssen keine SSH-Public-Keys mehr manuell in den `authorized_keys` der Zielserver hinterlegt werden. Stattdessen vertrauen die Server einer von Vault verwalteten SSH-Zertifizierungsstelle (CA). Benutzer lassen ihre temporären Schlüssel von Vault signieren.
 
-Zur Einrichtung wurde das Skript [setup-ssh-signing.sh](file:///home/joe/Development/hcv-proxomx/setup-ssh-signing.sh) erstellt und ausgeführt. Es hat die CA in Vault konfiguriert und den öffentlichen CA-Schlüssel als [vault_ssh_ca.pub](file:///home/joe/Development/hcv-proxomx/vault_ssh_ca.pub) gespeichert.
+Zur Einrichtung wurde das Skript [setup-ssh-signing.sh](file:///home/joe/Development/hcv-proxomx/scripts/setup-ssh-signing.sh) erstellt und ausgeführt. Es hat die CA in Vault konfiguriert und den öffentlichen CA-Schlüssel als [vault_ssh_ca.pub](file:///home/joe/Development/hcv-proxomx/secrets/vault_ssh_ca.pub) gespeichert.
 
 ### Server-Konfiguration
 
-Um die Konfiguration auf den Zielservern (z. B. Rocky Linux, Debian, Ubuntu, Arch Linux) zu vereinfachen, wurde das Skript [install-ssh-ca.sh](file:///home/joe/Development/hcv-proxomx/install-ssh-ca.sh) erstellt.
+Um die Konfiguration auf den Zielservern (z. B. Rocky Linux, Debian, Ubuntu, Arch Linux) zu vereinfachen, wurde das Skript [install-ssh-ca.sh](file:///home/joe/Development/hcv-proxomx/scripts/install-ssh-ca.sh) erstellt.
 
 #### Option A: Automatische Einrichtung über das Skript (Empfohlen)
 
-Kopiere das Skript [install-ssh-ca.sh](file:///home/joe/Development/hcv-proxomx/install-ssh-ca.sh) auf deinen Zielserver und führe es mit Root-Rechten aus:
+Kopiere das Skript [install-ssh-ca.sh](file:///home/joe/Development/hcv-proxomx/scripts/install-ssh-ca.sh) auf deinen Zielserver und führe es mit Root-Rechten aus:
 
 ```bash
 chmod +x install-ssh-ca.sh
@@ -210,7 +213,7 @@ Das Skript:
 Falls du die Konfiguration lieber manuell durchführen möchtest:
 
 1. **CA-Schlüssel auf den Server kopieren:**
-   Kopiere die Datei [vault_ssh_ca.pub](file:///home/joe/Development/hcv-proxomx/vault_ssh_ca.pub) auf den Zielserver unter `/etc/ssh/trusted-user-ca-keys.pem`.
+   Kopiere die Datei [vault_ssh_ca.pub](file:///home/joe/Development/hcv-proxomx/secrets/vault_ssh_ca.pub) auf den Zielserver unter `/etc/ssh/trusted-user-ca-keys.pem`.
    
    ```bash
    # Setze die korrekten Berechtigungen:
@@ -250,7 +253,7 @@ Jeder Benutzer (z. B. ein Administrator) kann nun einen kurzlebigen SSH-Schlüss
    Das Zertifikat wird mit einer Standard-Gültigkeit von 10 Minuten ausgestellt (max. 30 Minuten):
    
    ```bash
-   export VAULT_CACERT="/pfad/zu/lan_root_ca.crt"
+   export VAULT_CACERT="/pfad/zu/secrets/lan_root_ca.crt"
    export VAULT_ADDR="https://vault.lan"
    
    # 1. Login

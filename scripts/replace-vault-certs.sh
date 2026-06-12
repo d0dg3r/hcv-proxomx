@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KEYS_FILE="vault-keys.json"
-BOOTSTRAP_CA="ca.crt"
-PKI_CA="lan_root_ca.crt"
+# Config
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SECRETS_DIR="$WORKSPACE_DIR/secrets"
+
+KEYS_FILE="$SECRETS_DIR/vault-keys.json"
+BOOTSTRAP_CA="$SECRETS_DIR/ca.crt"
+PKI_CA="$SECRETS_DIR/lan_root_ca.crt"
 PRIMARY_NODE="10.1.3.221"
 
 if [ ! -f "$KEYS_FILE" ]; then
@@ -69,9 +74,23 @@ vault write -format=json pki/issue/lan \
     alt_names="vault.lan,localhost" \
     ttl="87600h" > "$REV_PROXY_JSON"
 
-jq -r '.data.certificate' "$REV_PROXY_JSON" > "reverse_proxy_vault.lan.crt"
-jq -r '.data.private_key' "$REV_PROXY_JSON" > "reverse_proxy_vault.lan.key"
+jq -r '.data.certificate' "$REV_PROXY_JSON" > "$SECRETS_DIR/reverse_proxy_vault.lan.crt"
+jq -r '.data.private_key' "$REV_PROXY_JSON" > "$SECRETS_DIR/reverse_proxy_vault.lan.key"
 rm -f "$REV_PROXY_JSON"
+
+# Create combined PEM bundle (Cert + Key + Root CA)
+cat "$SECRETS_DIR/reverse_proxy_vault.lan.crt" "$SECRETS_DIR/reverse_proxy_vault.lan.key" "$PKI_CA" > "$SECRETS_DIR/reverse_proxy_vault.lan.pem"
+
+# Store Reverse Proxy certs in Vault KV engine
+echo "Storing Reverse Proxy certs in Vault KV engine..."
+if ! vault secrets list -format=json | jq -e '."secret/"' >/dev/null; then
+    vault secrets enable -path=secret kv-v2
+fi
+vault kv put secret/reverse-proxy-certs \
+    certificate=@"$SECRETS_DIR/reverse_proxy_vault.lan.crt" \
+    private_key=@"$SECRETS_DIR/reverse_proxy_vault.lan.key" \
+    combined_pem=@"$SECRETS_DIR/reverse_proxy_vault.lan.pem"
+echo "Reverse Proxy certificates successfully backed up in Vault at secret/reverse-proxy-certs."
 
 echo "=== Distributing Certificates and Restarting Vault ==="
 

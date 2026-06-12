@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KEYS_FILE="vault-keys.json"
-CA_FILE="ca.crt"
+# Config
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SECRETS_DIR="$WORKSPACE_DIR/secrets"
+
+KEYS_FILE="$SECRETS_DIR/vault-keys.json"
+CA_FILE="$SECRETS_DIR/ca.crt"
 PRIMARY_NODE="10.1.3.221"
 
 if [ ! -f "$KEYS_FILE" ]; then
@@ -17,7 +22,7 @@ fi
 
 # Load root token and configure environment
 ROOT_TOKEN=$(jq -r '.root_token' "$KEYS_FILE")
-export VAULT_CACERT="$(pwd)/$CA_FILE"
+export VAULT_CACERT="$CA_FILE"
 export VAULT_ADDR="https://${PRIMARY_NODE}:8200"
 export VAULT_TOKEN="$ROOT_TOKEN"
 
@@ -61,6 +66,16 @@ echo "Creating user '$USERNAME' with admin policy..."
 vault write "auth/userpass/users/$USERNAME" \
     password="$PASSWORD" \
     policies="$POLICY_NAME"
+
+# 4. Store admin credentials in Vault KV engine
+echo "Storing admin credentials in Vault KV engine..."
+if ! vault secrets list -format=json | jq -e '."secret/"' >/dev/null; then
+    echo "Enabling KV v2 secrets engine at secret/..."
+    vault secrets enable -path=secret kv-v2
+fi
+
+vault kv put secret/admin-user username="$USERNAME" password="$PASSWORD"
+echo "Admin credentials successfully backed up in Vault at secret/admin-user."
 
 echo "----------------------------------------"
 echo "Admin user successfully created!"

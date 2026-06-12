@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-KEYS_FILE="vault-keys.json"
-CA_FILE="ca.crt"
+# Config
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SECRETS_DIR="$WORKSPACE_DIR/secrets"
+
+KEYS_FILE="$SECRETS_DIR/vault-keys.json"
+CA_FILE="$SECRETS_DIR/ca.crt"
 PRIMARY_NODE="10.1.3.221"
 
 if [ ! -f "$KEYS_FILE" ]; then
@@ -17,7 +22,7 @@ fi
 
 # Load root token and configure environment
 ROOT_TOKEN=$(jq -r '.root_token' "$KEYS_FILE")
-export VAULT_CACERT="$(pwd)/$CA_FILE"
+export VAULT_CACERT="$CA_FILE"
 export VAULT_ADDR="https://${PRIMARY_NODE}:8200"
 export VAULT_TOKEN="$ROOT_TOKEN"
 
@@ -36,7 +41,7 @@ echo "Tuning PKI secrets engine lease TTL to 20 years..."
 vault secrets tune -max-lease-ttl=175200h pki
 
 # 3. Generate Root CA for .lan (20 years TTL, devopsgeek switzerland)
-ROOT_CERT_FILE="lan_root_ca.crt"
+ROOT_CERT_FILE="$SECRETS_DIR/lan_root_ca.crt"
 echo "Generating/Replacing Internal Root CA..."
 vault write -field=certificate pki/root/generate/internal \
     common_name="lan Internal Root CA" \
@@ -45,6 +50,14 @@ vault write -field=certificate pki/root/generate/internal \
     ou="switzerland" \
     country="CH" > "$ROOT_CERT_FILE"
 echo "Root CA certificate saved to $ROOT_CERT_FILE."
+
+# Store Root CA in Vault KV engine
+echo "Storing Root CA certificate in Vault KV engine..."
+if ! vault secrets list -format=json | jq -e '."secret/"' >/dev/null; then
+    vault secrets enable -path=secret kv-v2
+fi
+vault kv put secret/root-ca certificate=@"$ROOT_CERT_FILE"
+echo "Root CA certificate successfully backed up in Vault at secret/root-ca."
 
 # 4. Configure CA and CRL URLs
 echo "Configuring PKI CA and CRL URLs..."
@@ -72,7 +85,7 @@ vault write pki/roles/lan \
 echo "----------------------------------------"
 echo "PKI Secrets Engine successfully configured for '.lan'!"
 echo "Role Name: lan"
-echo "Root CA saved to: $(pwd)/$ROOT_CERT_FILE"
+echo "Root CA saved to: $ROOT_CERT_FILE"
 echo "----------------------------------------"
 echo "You can now issue 10-year certificates using the CLI:"
 echo "  vault write -address=\"https://${PRIMARY_NODE}:8200\" pki/issue/lan common_name=\"myservice.lan\" ttl=\"87600h\""
