@@ -444,9 +444,11 @@ Jeder Benutzer (z. B. ein Administrator) kann nun einen kurzlebigen SSH-Schlüss
 
 ## ssh-sec: Automatisierter SSH-Zertifikats-Wrapper
 
-Um den manuellen Ablauf (Anmelden bei Vault, Schlüssel signieren lassen, SSH mit Zertifikat ausführen) vollständig zu automatisieren, wurde das Wrapper-Skript [ssh-sec](file:///home/joe/Development/hcv-proxomx/scripts/ssh-sec) entwickelt.
+Um den manuellen Ablauf (Anmelden bei Vault, Schlüssel signieren lassen, SSH mit Zertifikat ausführen) vollständig zu automatisieren, wurden Wrapper-Skripte für Linux/macOS sowie für Windows bereitgestellt.
 
-### Installation
+### Linux / macOS (`ssh-sec`)
+
+#### Installation
 
 Kopiere das Skript in ein Verzeichnis deines lokalen `$PATH` (z. B. `/usr/local/bin/`), damit du es systemweit nutzen kannst:
 
@@ -455,7 +457,7 @@ sudo cp scripts/ssh-sec /usr/local/bin/ssh-sec
 sudo chmod +x /usr/local/bin/ssh-sec
 ```
 
-### Nutzung
+#### Nutzung
 
 Du kannst `ssh-sec` genau wie den normalen `ssh`-Befehl verwenden. Es reicht alle zusätzlichen Parameter direkt an SSH weiter:
 
@@ -463,19 +465,37 @@ Du kannst `ssh-sec` genau wie den normalen `ssh`-Befehl verwenden. Es reicht all
 ssh-sec [user@]hostname [ssh_options]
 ```
 
-#### Beispiele:
-```bash
-# Einfache Verbindung als Root
-ssh-sec root@10.1.3.221
+---
 
-# Verbindung auf alternativem Port
-ssh-sec root@10.1.3.221 -p 2222
+### Windows (`ssh-sec.ps1`)
+
+Für Windows-Clients, die den nativen OpenSSH-Client (in Windows 10/11 integriert) in der PowerShell nutzen möchten, gibt es das PowerShell-Gegenstück [ssh-sec.ps1](file:///home/joe/Development/hcv-proxomx/scripts/ssh-sec.ps1).
+
+#### Installation
+
+1. Stelle sicher, dass das `vault` CLI installiert und im Windows-`PATH` registriert ist.
+2. Kopiere das PowerShell-Skript an einen Ort deiner Wahl (oder füge das Verzeichnis [scripts](file:///home/joe/Development/hcv-proxomx/scripts) zu deinem Benutzer-`PATH` hinzu).
+
+#### Nutzung
+
+Führe das Skript in einer PowerShell-Konsole aus:
+
+```powershell
+.\scripts\ssh-sec.ps1 [user@]hostname [ssh_options]
 ```
 
-#### Funktionsweise im Hintergrund:
-1. **Ziel-Parsing:** Es ermittelt den Benutzernamen (z. B. `root`) und die IP/Hostname des Zielservers. Wird kein Benutzername angegeben, wird dein lokaler Linux-Benutzername verwendet.
+Beispiel:
+```powershell
+.\scripts\ssh-sec.ps1 root@10.1.3.221
+```
+
+---
+
+### Funktionsweise im Hintergrund (beide Skripte):
+1. **Ziel-Parsing:** Es ermittelt den Benutzernamen (z. B. `root`) und die IP/Hostname des Zielservers. Wird kein Benutzername angegeben, wird dein lokaler Benutzername verwendet.
 2. **Vault-Statusprüfung:** Es prüft, ob eine aktive Vault-Sitzung vorliegt. Falls nicht, fordert es dich interaktiv per `vault login` zur Authentifizierung auf.
-3. **Schlüsselerkennung:** Es sucht nach deinem lokalen SSH-Schlüssel (bevorzugt `~/.ssh/id_ed25519.pub`, sonst `~/.ssh/id_rsa.pub`).
+3. **Schlüsselerkennung:** Es sucht nach deinem lokalen SSH-Schlüssel (bevorzugt `id_ed25519.pub`, sonst `id_rsa.pub` im SSH-Verzeichnis).
 4. **Zertifikatssignierung:** Es lässt deinen öffentlichen Schlüssel bei Vault für den gewünschten Ziel-Benutzer (Principal) signieren und speichert das Zertifikat als `*-cert.pub` ab.
 5. **Verbindung:** Führt den originalen `ssh`-Befehl mit dem privaten Schlüssel und dem frisch signierten Zertifikat aus.
+
 
