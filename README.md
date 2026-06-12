@@ -183,6 +183,31 @@ Verwende das kombinierte PEM-Bundle oder das Zertifikat+Key-Paar in deiner Rever
 
 ---
 
+## Speicherorte der Secrets in Vault
+
+Alle wichtigen Schlüssel, Zertifikate und Konfigurationen werden nach dem Ausführen der jeweiligen Skripte automatisch verschlüsselt in der KV-Engine (Key-Value v2) des Vaults gesichert.
+
+Folgende Pfade werden in Vault verwendet:
+
+| Inhalt / Zweck | Pfad in Vault | Enthaltene Felder / Keys |
+| :--- | :--- | :--- |
+| **Initialisierungsschlüssel** (Unseal-Keys & Root-Token) | `secret/vault-keys` | `unseal_keys_b64`, `root_token` uvm. |
+| **Admin-Benutzer** (Lokales CLI/UI-Konto) | `secret/admin-user` | `username`, `password` |
+| **Lokales Root-CA-Zertifikat** (`lan_root_ca.crt`) | `secret/root-ca` | `certificate` |
+| **SSH-CA-Public-Key** (`vault_ssh_ca.pub`) | `secret/ssh-ca` | `public_key` |
+| **Reverse-Proxy-Zertifikate** (Cert, Key & PEM-Bundle) | `secret/reverse-proxy-certs` | `certificate`, `private_key`, `combined_pem` |
+
+Um ein Secret manuell über das CLI abzufragen, verwende:
+```bash
+vault kv get <Pfad>
+```
+Beispiel:
+```bash
+vault kv get secret/admin-user
+```
+
+---
+
 ## SSH Key Signing (Client-Zertifikate)
 
 Mit dem SSH-Zertifikats-Signierungs-Verfahren von Vault müssen keine SSH-Public-Keys mehr manuell in den `authorized_keys` der Zielserver hinterlegt werden. Stattdessen vertrauen die Server einer von Vault verwalteten SSH-Zertifizierungsstelle (CA). Benutzer lassen ihre temporären Schlüssel von Vault signieren.
@@ -250,7 +275,7 @@ Jeder Benutzer (z. B. ein Administrator) kann nun einen kurzlebigen SSH-Schlüss
    ```
 
 2. **Bei Vault anmelden und Schlüssel signieren lassen:**
-   Das Zertifikat wird mit einer Standard-Gültigkeit von 10 Minuten ausgestellt (max. 30 Minuten):
+   Die Zertifikate werden mit einer Gültigkeit von 10 Minuten ausgestellt (max. 30 Minuten). Aufgrund der Sicherheitsrichtlinien musst du den Parameter `valid_principals` angeben, um festzulegen, als welcher Unix-Benutzer du dich anmelden möchtest:
    
    ```bash
    export VAULT_CACERT="/pfad/zu/secrets/lan_root_ca.crt"
@@ -259,8 +284,15 @@ Jeder Benutzer (z. B. ein Administrator) kann nun einen kurzlebigen SSH-Schlüss
    # 1. Login
    vault login -method=userpass username=admin
    
-   # 2. Signieren
-   vault write -field=signed_key ssh-client-signer/sign/client-role public_key=@~/.ssh/id_ed25519.pub > ~/.ssh/id_ed25519-cert.pub
+   # 2. Signieren für normale Benutzer (über client-role)
+   vault write -field=signed_key ssh-client-signer/sign/client-role \
+       public_key=@~/.ssh/id_ed25519.pub \
+       valid_principals="testuser" > ~/.ssh/id_ed25519-cert.pub
+       
+   # ODER: Signieren für administrative Logins (über admin-role, inkl. Agent-Forwarding)
+   vault write -field=signed_key ssh-client-signer/sign/admin-role \
+       public_key=@~/.ssh/id_ed25519.pub \
+       valid_principals="root" > ~/.ssh/id_ed25519-cert.pub
    ```
 
 3. **Zertifikat prüfen:**
