@@ -53,11 +53,11 @@ echo "SSH CA public key saved to: $SSH_CA_PUB"
 
 # Store SSH CA public key in Vault KV engine
 echo "Storing SSH CA public key in Vault KV engine..."
-if ! vault secrets list -format=json | jq -e '."secret/"' >/dev/null; then
-    vault secrets enable -path=secret kv-v2
+if ! vault secrets list -format=json | jq -e '."hc-vault/"' >/dev/null; then
+    vault secrets enable -path=hc-vault kv-v2
 fi
-vault kv put secret/ssh-ca public_key=@"$SSH_CA_PUB"
-echo "SSH CA public key successfully backed up in Vault at secret/ssh-ca."
+vault kv put hc-vault/ssh-ca public_key=@"$SSH_CA_PUB"
+echo "SSH CA public key successfully backed up in Vault at hc-vault/ssh-ca."
 
 # 4. Create SSH roles for signing client keys
 echo "Creating SSH role 'client-role' with 30-minute max TTL..."

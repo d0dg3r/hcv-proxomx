@@ -69,13 +69,13 @@ vault write "auth/userpass/users/$USERNAME" \
 
 # 4. Store admin credentials in Vault KV engine
 echo "Storing admin credentials in Vault KV engine..."
-if ! vault secrets list -format=json | jq -e '."secret/"' >/dev/null; then
-    echo "Enabling KV v2 secrets engine at secret/..."
-    vault secrets enable -path=secret kv-v2
+if ! vault secrets list -format=json | jq -e '."hc-vault/"' >/dev/null; then
+    echo "Enabling KV v2 secrets engine at hc-vault/..."
+    vault secrets enable -path=hc-vault kv-v2
 fi
 
-vault kv put secret/admin-user username="$USERNAME" password="$PASSWORD"
-echo "Admin credentials successfully backed up in Vault at secret/admin-user."
+vault kv put hc-vault/admin-user username="$USERNAME" password="$PASSWORD"
+echo "Admin credentials successfully backed up in Vault at hc-vault/admin-user."
 
 echo "----------------------------------------"
 echo "Admin user successfully created!"

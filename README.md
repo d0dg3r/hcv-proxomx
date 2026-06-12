@@ -191,11 +191,11 @@ Folgende Pfade werden in Vault verwendet:
 
 | Inhalt / Zweck | Pfad in Vault | Enthaltene Felder / Keys |
 | :--- | :--- | :--- |
-| **Initialisierungsschlüssel** (Unseal-Keys & Root-Token) | `secret/vault-keys` | `unseal_keys_b64`, `root_token` uvm. |
-| **Admin-Benutzer** (Lokales CLI/UI-Konto) | `secret/admin-user` | `username`, `password` |
-| **Lokales Root-CA-Zertifikat** (`lan_root_ca.crt`) | `secret/root-ca` | `certificate` |
-| **SSH-CA-Public-Key** (`vault_ssh_ca.pub`) | `secret/ssh-ca` | `public_key` |
-| **Reverse-Proxy-Zertifikate** (Cert, Key & PEM-Bundle) | `secret/reverse-proxy-certs` | `certificate`, `private_key`, `combined_pem` |
+| **Initialisierungsschlüssel** (Unseal-Keys & Root-Token) | `hc-vault/vault-keys` | `unseal_keys_b64`, `root_token` uvm. |
+| **Admin-Benutzer** (Lokales CLI/UI-Konto) | `hc-vault/admin-user` | `username`, `password` |
+| **Lokales Root-CA-Zertifikat** (`lan_root_ca.crt`) | `hc-vault/root-ca` | `certificate` |
+| **SSH-CA-Public-Key** (`vault_ssh_ca.pub`) | `hc-vault/ssh-ca` | `public_key` |
+| **Reverse-Proxy-Zertifikate** (Cert, Key & PEM-Bundle) | `hc-vault/reverse-proxy-certs` | `certificate`, `private_key`, `combined_pem` |
 
 Um ein Secret manuell über das CLI abzufragen, verwende:
 ```bash
@@ -203,7 +203,7 @@ vault kv get <Pfad>
 ```
 Beispiel:
 ```bash
-vault kv get secret/admin-user
+vault kv get hc-vault/admin-user
 ```
 
 ---

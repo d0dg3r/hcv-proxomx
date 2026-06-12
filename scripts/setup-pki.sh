@@ -53,11 +53,11 @@ echo "Root CA certificate saved to $ROOT_CERT_FILE."
 
 # Store Root CA in Vault KV engine
 echo "Storing Root CA certificate in Vault KV engine..."
-if ! vault secrets list -format=json | jq -e '."secret/"' >/dev/null; then
-    vault secrets enable -path=secret kv-v2
+if ! vault secrets list -format=json | jq -e '."hc-vault/"' >/dev/null; then
+    vault secrets enable -path=hc-vault kv-v2
 fi
-vault kv put secret/root-ca certificate=@"$ROOT_CERT_FILE"
-echo "Root CA certificate successfully backed up in Vault at secret/root-ca."
+vault kv put hc-vault/root-ca certificate=@"$ROOT_CERT_FILE"
+echo "Root CA certificate successfully backed up in Vault at hc-vault/root-ca."
 
 # 4. Configure CA and CRL URLs
 echo "Configuring PKI CA and CRL URLs..."

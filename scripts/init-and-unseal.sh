@@ -106,12 +106,12 @@ echo "Storing keys in Vault KV engine..."
 export VAULT_TOKEN="$ROOT_TOKEN"
 export VAULT_ADDR="https://${PRIMARY_NODE}:8200"
 
-if ! vault secrets list -format=json | jq -e '."secret/"' >/dev/null; then
-    echo "Enabling KV v2 secrets engine at secret/..."
-    vault secrets enable -path=secret kv-v2
+if ! vault secrets list -format=json | jq -e '."hc-vault/"' >/dev/null; then
+    echo "Enabling KV v2 secrets engine at hc-vault/..."
+    vault secrets enable -path=hc-vault kv-v2
 fi
 
-vault kv put secret/vault-keys @"$KEYS_FILE"
-echo "vault-keys.json successfully backed up in Vault at secret/vault-keys."
+vault kv put hc-vault/vault-keys @"$KEYS_FILE"
+echo "vault-keys.json successfully backed up in Vault at hc-vault/vault-keys."
 
 echo "=== Vault Cluster Setup Complete ==="

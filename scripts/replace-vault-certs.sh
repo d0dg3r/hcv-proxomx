@@ -83,14 +83,14 @@ cat "$SECRETS_DIR/reverse_proxy_vault.lan.crt" "$SECRETS_DIR/reverse_proxy_vault
 
 # Store Reverse Proxy certs in Vault KV engine
 echo "Storing Reverse Proxy certs in Vault KV engine..."
-if ! vault secrets list -format=json | jq -e '."secret/"' >/dev/null; then
-    vault secrets enable -path=secret kv-v2
+if ! vault secrets list -format=json | jq -e '."hc-vault/"' >/dev/null; then
+    vault secrets enable -path=hc-vault kv-v2
 fi
-vault kv put secret/reverse-proxy-certs \
+vault kv put hc-vault/reverse-proxy-certs \
     certificate=@"$SECRETS_DIR/reverse_proxy_vault.lan.crt" \
     private_key=@"$SECRETS_DIR/reverse_proxy_vault.lan.key" \
     combined_pem=@"$SECRETS_DIR/reverse_proxy_vault.lan.pem"
-echo "Reverse Proxy certificates successfully backed up in Vault at secret/reverse-proxy-certs."
+echo "Reverse Proxy certificates successfully backed up in Vault at hc-vault/reverse-proxy-certs."
 
 echo "=== Distributing Certificates and Restarting Vault ==="
 
